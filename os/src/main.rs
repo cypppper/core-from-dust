@@ -1,5 +1,4 @@
 #![feature(panic_info_message)]
-
 #![no_std]
 #![no_main]
 
@@ -8,11 +7,16 @@ mod console;
 mod lang_items;
 mod sbi;
 mod logging;
+mod sync;
+pub mod batch;
+pub mod syscall;
+pub mod trap;
 
 use core::arch::global_asm;
 use log::*;
 
 global_asm!(include_str!("entry.asm"));
+global_asm!(include_str!("link_app.S"));
 
 #[no_mangle]
 pub fn rust_main() -> ! {
@@ -30,26 +34,29 @@ pub fn rust_main() -> ! {
     }
     clear_bss();
     logging::init();
-    println!("[kernel] Hello, world!");
+    trace!("[kernel] Hello, world!");
     trace!(
         "[kernel] .text [{:#x}, {:#x})",
         stext as usize,
         etext as usize
     );
-    debug!(
+    trace!(
         "[kernel] .rodata [{:#x}, {:#x})",
         srodata as usize, erodata as usize
     );
-    info!(
+    trace!(
         "[kernel] .data [{:#x}, {:#x})",
         sdata as usize, edata as usize
     );
-    warn!(
+    trace!(
         "[kernel] boot_stack top=bottom={:#x}, lower_bound={:#x}",
         boot_stack_top as usize, boot_stack_lower_bound as usize
     );
-    error!("[kernel] .bss [{:#x}, {:#x})", sbss as usize, ebss as usize);
+    trace!("[kernel] .bss [{:#x}, {:#x})", sbss as usize, ebss as usize);
     
+    trap::init();
+    batch::init();
+    batch::run_next_app();
     // CI autotest success: sbi::shutdown(false)
     // CI autotest failed : sbi::shutdown(true)
     sbi::shutdown(false)
