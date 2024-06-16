@@ -5,8 +5,8 @@
 //! language, so this module really is just a wrapper around
 //! `switch.S`.
 
-use core::arch::global_asm;
 use super::TaskContext;
+use core::arch::global_asm;
 
 global_asm!(include_str!("switch.S"));
 

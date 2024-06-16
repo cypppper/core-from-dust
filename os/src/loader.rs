@@ -6,6 +6,8 @@
 //! [`KernelStack`] amd [`UserStack`].
 
 use crate::{config::*, trap::TrapContext};
+use core::arch::asm;
+use log::*;
 
 #[repr(align(4096))]
 #[derive(Copy, Clone)]
@@ -32,7 +34,7 @@ impl KernelStack {
         self.data.as_ptr() as usize + KERNEL_STACK_SIZE
     }
     pub fn push_context(&self, trap_cx: TrapContext) -> usize {
-        let trap_cx_ptr = (self.get_sp() - core::mem::sizeof::<TrapContext>()) as *mut TrapContext;
+        let trap_cx_ptr = (self.get_sp() - core::mem::size_of::<TrapContext>()) as *mut TrapContext;
         unsafe {
             *trap_cx_ptr = trap_cx;
         }
@@ -51,7 +53,7 @@ fn get_base_i(app_id: usize) -> usize {
     APP_BASE_ADDRESS + app_id * APP_SIZE_LIMIT
 }
 
-fn get_num_app() -> usize {
+pub fn get_num_app() -> usize {
     extern "C" {
         fn _num_app();
     }
@@ -61,8 +63,8 @@ fn get_num_app() -> usize {
 /// Load nth user app at
 /// [APP_BASE_ADDRESS + n * APP_SIZE_LIMIT, APP_BASE_ADDRESS + (n+1) * APP_SIZE_LIMIT).
 pub fn load_apps() {
-    extern "C" { fn _num_apps(); }
-    let num_app_ptr = _num_apps as usize as *const usize;
+    extern "C" { fn _num_app(); }
+    let num_app_ptr = _num_app as usize as *const usize;
     let num_app = get_num_app();
     let app_start = unsafe { core::slice::from_raw_parts(num_app_ptr.add(1), num_app + 1) };
     // load apps
@@ -76,6 +78,7 @@ pub fn load_apps() {
             core::slice::from_raw_parts(app_start[i] as *const u8, app_start[i + 1] - app_start[i])
         };
         let dst = unsafe { core::slice::from_raw_parts_mut(base_i as *mut u8, src.len()) };
+        debug!("src: {:#x} ~ {:#x}, dst: {:#x} ~ {:#x}", app_start[i], app_start[i+1], base_i, base_i + APP_SIZE_LIMIT);
         dst.copy_from_slice(src);
     }
     // Memory fence about fetching the instruction memory
@@ -87,4 +90,12 @@ pub fn load_apps() {
     unsafe {
         asm!("fence.i");
     }
+}
+
+/// get app info with entry and sp and save `TrapContext` in kernel stack
+pub fn init_app_cx(app_id: usize) -> usize {
+    KERNEL_STACK[app_id].push_context(TrapContext::app_init_context(
+        get_base_i(app_id),
+        USER_STACK[app_id].get_sp(),
+    ))
 }

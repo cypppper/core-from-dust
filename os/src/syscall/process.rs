@@ -1,8 +1,16 @@
 //! App management syscalls
-use crate::batch::run_next_app;
+use crate::task::{exit_current_and_run_next, suspend_current_and_run_next};
+use log::*;
 
 /// task exits and submit an exit code
 pub fn sys_exit(exit_code: i32) -> ! {
     println!("[kernel] Application exited with code {}", exit_code);
-    run_next_app()
+    exit_current_and_run_next();
+    panic!("Unreachable in sys_exit!");
+}
+
+pub fn sys_yield() -> isize {
+    debug!("[kernel] run yield!");
+    suspend_current_and_run_next();
+    0
 }
