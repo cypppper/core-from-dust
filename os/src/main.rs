@@ -8,9 +8,11 @@ mod lang_items;
 mod sbi;
 mod logging;
 mod sync;
-pub mod batch;
+mod config;
 pub mod syscall;
 pub mod trap;
+mod loader;
+mod task;
 
 use core::arch::global_asm;
 use log::*;
@@ -55,11 +57,8 @@ pub fn rust_main() -> ! {
     trace!("[kernel] .bss [{:#x}, {:#x})", sbss as usize, ebss as usize);
     
     trap::init();
-    batch::init();
-    batch::run_next_app();
-    // CI autotest success: sbi::shutdown(false)
-    // CI autotest failed : sbi::shutdown(true)
-    sbi::shutdown(false)
+    // batch::init();
+    // batch::run_next_app();
 }
 
 fn clear_bss() {
