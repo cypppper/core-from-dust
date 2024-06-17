@@ -13,6 +13,9 @@ pub mod syscall;
 pub mod trap;
 mod loader;
 mod task;
+mod timer;
+#[path = "boards/qemu.rs"]
+mod board;
 
 use core::arch::global_asm;
 
@@ -25,6 +28,8 @@ pub fn rust_main() -> ! {
     logging::init();
     trap::init();
     loader::load_apps();
+    trap::enable_timer_interrupt();
+    timer::set_next_trigger();
     task::run_first_task();
     panic!("Unreachable in rust_main!");
 }

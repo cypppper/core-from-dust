@@ -2,7 +2,6 @@ mod context;
 mod switch;
 mod task;
 
-use core::arch::global_asm;
 use log::*;
 use switch::__switch;
 

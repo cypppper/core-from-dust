@@ -1,5 +1,5 @@
 //! App management syscalls
-use crate::task::{exit_current_and_run_next, suspend_current_and_run_next};
+use crate::{task::{exit_current_and_run_next, suspend_current_and_run_next}, timer::get_time_ms};
 use log::*;
 
 /// task exits and submit an exit code
@@ -13,4 +13,8 @@ pub fn sys_yield() -> isize {
     debug!("[kernel] run yield!");
     suspend_current_and_run_next();
     0
+}
+
+pub fn sys_get_time() -> isize {
+    get_time_ms() as isize
 }
