@@ -2,15 +2,18 @@ mod context;
 mod switch;
 mod task;
 
+use alloc::vec::Vec;
 use log::*;
 use switch::__switch;
 
 pub use context::TaskContext;
 use lazy_static::lazy_static;
 use task::{TaskControlBlock, TaskStatus};
+use crate::loader::{get_app_data, get_num_app};
 use crate::sbi::shutdown;
 
-use crate::{config::MAX_APP_NUM, loader::{get_num_app, init_app_cx}, sync::UPSafeCell};
+use crate::trap::TrapContext;
+use crate::{config::MAX_APP_NUM,  sync::UPSafeCell};
 
 pub struct TaskManager {
     num_app: usize,
@@ -18,30 +21,30 @@ pub struct TaskManager {
 }
 
 struct TaskManagerInner {
-    tasks: [TaskControlBlock; MAX_APP_NUM],
+    tasks: Vec<TaskControlBlock>,
     current_task: usize,  // current running task in cpu
 }
 
 lazy_static! {
     pub static ref TASK_MANAGER: TaskManager = {
+        println!("init TASK_MANAGER");
         let num_app = get_num_app();
-        let mut tasks = [
-            TaskControlBlock {
-                task_cx: TaskContext::zero_init(),
-                task_status: TaskStatus::UnInit
-            };
-            MAX_APP_NUM
-        ];
+        println!("num_app = {}", num_app);
+        let mut tasks: Vec<TaskControlBlock> = Vec::new();
         for i in 0..num_app {
-            tasks[i].task_cx = TaskContext::goto_restore(init_app_cx(i));  // set status to kernel stack after trap
-            tasks[i].task_status = TaskStatus::Ready;
+            tasks.push(TaskControlBlock::new(
+                get_app_data(i),
+                i,
+            ));
         }
         TaskManager {
             num_app,
-            inner: unsafe { UPSafeCell::new(TaskManagerInner {
-                tasks,
-                current_task: 0,
-            })},
+            inner: unsafe {
+                UPSafeCell::new(TaskManagerInner {
+                    tasks,
+                    current_task: 0,
+                })
+            }
         }
     };
 }
@@ -51,7 +54,7 @@ impl TaskManager {
     /// Run the first task in task list
     /// 
     /// Generally, the first task in task list is an idle task (we call it zero process later).
-    /// But in ch3, we load apps statically, so the first task is a real app.
+    /// But in ch4, we load apps statically, so the first task is a real app.
     fn run_first_task(&self) -> ! {
         let mut inner = self.inner.exclusive_access();
         let task0 = &mut inner.tasks[0];
@@ -114,6 +117,16 @@ impl TaskManager {
             shutdown(false);
         }
     }
+
+    fn get_current_token(&self) -> usize {
+        let inner = self.inner.exclusive_access();
+        inner.tasks[inner.current_task].get_user_token()
+    }
+
+    fn get_current_trap_cx(&self) -> &'static mut TrapContext {
+        let inner = self.inner.exclusive_access();
+        inner.tasks[inner.current_task].get_trap_cx()
+    }
 }
 
 pub fn run_first_task() {
@@ -140,4 +153,13 @@ pub fn suspend_current_and_run_next() {
 pub fn exit_current_and_run_next() {
     mark_current_exited();
     run_next_task();
+}
+
+/// Get the current 'Running' task's token.
+pub fn current_user_token() -> usize {
+    TASK_MANAGER.get_current_token()
+}
+
+pub fn current_trap_cx() -> &'static mut TrapContext {
+    TASK_MANAGER.get_current_trap_cx()
 }
