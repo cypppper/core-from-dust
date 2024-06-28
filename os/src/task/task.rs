@@ -1,14 +1,13 @@
 use core::cell::RefMut;
 
 use alloc::sync::{Arc, Weak};
-use alloc::task;
 use alloc::vec::Vec;
 
-use crate::config::{kernel_stack_position, TRAP_CONTEXT};
+use crate::config::TRAP_CONTEXT;
 use crate::sync::UPSafeCell;
 use crate::task::TaskContext;
 use crate::trap::{trap_handler, TrapContext};
-use crate::mm::{MemorySet, PhysPageNum, VirtAddr, KERNEL_SPACE, MapPermission};
+use crate::mm::{MemorySet, PhysPageNum, VirtAddr, KERNEL_SPACE};
 
 use super::pid::{pid_alloc, KernelStack, PidHandle};
 
