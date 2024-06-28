@@ -6,7 +6,7 @@ mod memory_set;
 
 pub use memory_set::{KERNEL_SPACE, remap_test, MemorySet, MapPermission};
 pub use address::{PhysPageNum, PhysAddr, VirtAddr, VirtPageNum};
-pub use page_table::translated_byte_buffer;
+pub use page_table::{translated_byte_buffer, translated_str, translated_refmut};
 
 pub fn init() {
     heap_allocator::init_heap();  // enable rust data-structure

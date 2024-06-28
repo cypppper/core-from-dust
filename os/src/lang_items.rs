@@ -1,3 +1,5 @@
+use alloc::string::ToString;
+
 // os/src/lang_items.rs
 use crate::println;
 use crate::sbi::shutdown;
@@ -10,7 +12,7 @@ fn panic(info: &PanicInfo) -> ! {
             "Panicked at {}:{} {}",
             location.file(),
             location.line(),
-            info.message().unwrap()
+            info.message().unwrap(),
         );
     } else {
         println!("Panicked: {}", info.message().unwrap());

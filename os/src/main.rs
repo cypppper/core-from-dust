@@ -15,7 +15,7 @@ mod config;
 pub mod syscall;
 pub mod trap;
 mod loader;
-mod task;
+pub mod task;
 mod timer;
 #[path = "boards/qemu.rs"]
 mod board;
@@ -29,13 +29,16 @@ global_asm!(include_str!("link_app.S"));
 
 #[no_mangle]
 pub fn rust_main() -> ! {
+    // run with sp pointing at boot stack
     clear_bss();
     logging::init();
-    // trap::init();
     mm::init();
+    task::add_initproc();
+    trap::init();
     trap::enable_timer_interrupt();
     timer::set_next_trigger();
-    task::run_first_task();
+    loader::list_apps();
+    task::run_tasks();
     panic!("Unreachable in rust_main!");
 }
 

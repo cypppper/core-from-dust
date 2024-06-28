@@ -55,11 +55,14 @@ impl FrameAllocator for StackFrameAllocator {
     }
     fn alloc(&mut self) -> Option<PhysPageNum> {
         if let Some(ppn) = self.recycled.pop() {
+            debug!("[frame] alloc recycled {:#x}", usize::from(PhysAddr::from(PhysPageNum::from(ppn))));
             Some(ppn.into())
         } else {
             if self.current == self.end {
+                debug!("[frame] alloc failed!");
                 None
             } else {
+                debug!("[frame] alloc current {:#x}", usize::from(PhysAddr::from(PhysPageNum::from(self.current))));
                 self.current += 1;
                 Some((self.current - 1).into())
             }
@@ -74,6 +77,7 @@ impl FrameAllocator for StackFrameAllocator {
             .is_some() {
             panic!("Frame ppn = {:#x} has not been allocated!", ppn);
         }
+        debug!("[frame] recycle frame {:#x}", usize::from(PhysAddr::from(PhysPageNum::from(ppn))));
         // recycle
         self.recycled.push(ppn);
     }
