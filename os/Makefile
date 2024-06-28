@@ -6,9 +6,9 @@ KERNEL_BIN := $(KERNEL_ELF).bin
 DISASM_TMP := target/$(TARGET)/$(MODE)/asm
 
 # BOARD
-BOARD		:= qemu
-SBI			?= rustsbi
-BOOTLOADER	:= ../bootloader/$(SBI)-$(BOARD).bin
+BOARD := qemu
+SBI ?= rustsbi
+BOOTLOADER := ../bootloader/$(SBI)-$(BOARD).bin
 
 # Building mode argument
 ifeq ($(MODE), release)
@@ -25,6 +25,9 @@ OBJCOPY := rust-objcopy --binary-architecture=riscv64
 # Disassembly
 DISASM ?= -x
 
+# Run usertests or usershell
+TEST ?=
+
 build: env $(KERNEL_BIN)
 
 env:
@@ -32,16 +35,15 @@ env:
 	cargo install cargo-binutils
 	rustup component add rust-src
 	rustup component add llvm-tools-preview
-	rustup target add riscv64gc-unknown-none-elf
 
 $(KERNEL_BIN): kernel
 	@$(OBJCOPY) $(KERNEL_ELF) --strip-all -O binary $@
 
 kernel:
-	@cd ../user && make build
+	@cd ../user && make build TEST=$(TEST)
 	@echo Platform: $(BOARD)
 	@cp src/linker-$(BOARD).ld src/linker.ld
-	@cargo build $(MODE_ARG)
+	@cargo build --release
 	@rm src/linker.ld
 
 clean:
