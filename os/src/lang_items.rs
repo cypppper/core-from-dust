@@ -1,6 +1,5 @@
 use alloc::string::ToString;
 
-// os/src/lang_items.rs
 use crate::println;
 use crate::sbi::shutdown;
 use core::panic::PanicInfo;

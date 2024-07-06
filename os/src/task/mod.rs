@@ -11,7 +11,7 @@ pub use processor::{current_task, schedule, take_current_task};
 pub use context::TaskContext;
 use lazy_static::lazy_static;
 use task::{TaskControlBlock, TaskStatus};
-use crate::loader:: get_app_data_by_name;
+use crate::fs::{open_file, OpenFlags};
 use crate::trap::TrapContext;
 pub use processor::run_tasks;
 
@@ -80,9 +80,11 @@ pub fn current_trap_cx() -> &'static mut TrapContext {
 }
 
 lazy_static! {
-    pub static ref INITPROC: Arc<TaskControlBlock> = Arc::new(
-        TaskControlBlock::new(get_app_data_by_name("initproc").unwrap())
-    );
+    pub static ref INITPROC: Arc<TaskControlBlock> = Arc::new({
+        let inode = open_file("initproc", OpenFlags::RDONLY).unwrap();
+        let v = inode.read_all();
+        TaskControlBlock::new(v.as_slice())
+    });
 }
 
 pub fn add_initproc() {

@@ -6,6 +6,7 @@ use lazy_static::lazy_static;
 use log::debug;
 use riscv::register::satp;
 
+use crate::config::MMIO;
 use crate::{config::{MEMORY_END, PAGE_SIZE, TRAMPOLINE, TRAP_CONTEXT, USER_STACK_SIZE}, mm::address::StepByOne, sync::UPSafeCell};
 
 use super::page_table::PageTableEntry;
@@ -249,7 +250,15 @@ impl MemorySet {
             ),
             None,
         );
-        // println!("mapping memory-mapped registers");
+        println!("mapping memory-mapped registers");
+        for pair in MMIO {
+            memory_set.push(MapArea::new(
+                (*pair).0.into(),
+                ((*pair).0 + (*pair).1).into(),
+                MapType::Identical,
+                MapPermission::R | MapPermission::W,
+            ), None);
+        }
         memory_set
     }
 
@@ -364,6 +373,11 @@ lazy_static!{
     pub static ref KERNEL_SPACE: Arc<UPSafeCell<MemorySet>> = Arc::new(unsafe {
         UPSafeCell::new(MemorySet::new_kernel()
     )});
+}
+
+/// Get kernelspace root ppn
+pub fn kernel_token() -> usize {
+    KERNEL_SPACE.exclusive_access().token()
 }
 
 pub fn remap_test() {

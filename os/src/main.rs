@@ -14,9 +14,10 @@ mod sync;
 mod config;
 pub mod syscall;
 pub mod trap;
-mod loader;
 pub mod task;
 mod timer;
+mod fs;
+mod drivers;
 #[path = "boards/qemu.rs"]
 mod board;
 mod mm;
@@ -33,11 +34,10 @@ pub fn rust_main() -> ! {
     clear_bss();
     logging::init();
     mm::init();
-    task::add_initproc();
     trap::init();
     trap::enable_timer_interrupt();
     timer::set_next_trigger();
-    loader::list_apps();
+    task::add_initproc();
     task::run_tasks();
     panic!("Unreachable in rust_main!");
 }
