@@ -1,6 +1,7 @@
 use alloc::{sync::Arc, vec::Vec};
 use easy_fs::{EasyFileSystem, Inode};
 use lazy_static::lazy_static;
+use log::debug;
 use crate::{drivers::BLOCK_DEVICE, sync::UPSafeCell};
 use super::{File, UserBuffer};
 
@@ -62,6 +63,7 @@ impl File for OSInode {
     fn write(&self, buf: UserBuffer) -> usize {
         let mut inner = self.inner.exclusive_access();
         let mut total_write_size = 0usize;
+        debug!("write buffer len:{:?}", buf.len());
         for slice in buf.buffers.iter() {
             let write_size = inner.inode.write_at(inner.offset, *slice);
             assert_eq!(write_size, slice.len());

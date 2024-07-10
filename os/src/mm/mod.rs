@@ -6,7 +6,7 @@ mod memory_set;
 
 pub use memory_set::{KERNEL_SPACE, remap_test, MemorySet, MapPermission, kernel_token};
 pub use address::{PhysPageNum, PhysAddr, VirtAddr, VirtPageNum, StepByOne};
-pub use page_table::{translated_byte_buffer, translated_str, translated_refmut, UserBuffer, PageTable};
+pub use page_table::{translated_byte_buffer, translated_str, translated_refmut, translated_ref, UserBuffer, PageTable};
 pub use frame_allocator::{frame_alloc, frame_dealloc, FrameTracker};
 
 pub fn init() {

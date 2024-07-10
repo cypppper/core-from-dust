@@ -1,8 +1,10 @@
 use core::cell::RefMut;
 
+use alloc::string::String;
 use alloc::sync::{Arc, Weak};
 use alloc::vec::{Vec};
 use alloc::vec;
+use log::debug;
 
 use crate::config::TRAP_CONTEXT;
 use crate::fs::stdio::{Stdin, Stdout};
@@ -10,9 +12,11 @@ use crate::fs::File;
 use crate::sync::UPSafeCell;
 use crate::task::TaskContext;
 use crate::trap::{trap_handler, TrapContext};
-use crate::mm::{MemorySet, PhysPageNum, VirtAddr, KERNEL_SPACE};
+use crate::mm::{translated_byte_buffer, translated_refmut, MemorySet, PhysPageNum, VirtAddr, KERNEL_SPACE};
+use crate::task::action::{SignalAction, SignalActions};
 
 use super::pid::{pid_alloc, KernelStack, PidHandle};
+use super::signals::SignalFlags;
 
 #[derive(Copy, Clone, PartialEq)]
 pub enum TaskStatus {
@@ -33,6 +37,15 @@ pub struct TaskControlBlockInner {
     pub children: Vec<Arc<TaskControlBlock>>,
     pub exit_code: i32,
     pub fd_table: Vec<Option<Arc<dyn File + Send + Sync>>>,
+    
+    pub signal_mask: SignalFlags,
+    pub signal_actions: SignalActions,
+    pub signals: SignalFlags,
+    pub killed: bool,
+    pub frozen: bool,
+    // the signal which is being handling
+    pub handling_sig: isize,
+    pub trap_ctx_backup: Option<TrapContext>,
 }
 
 impl TaskControlBlockInner {
@@ -102,13 +115,20 @@ impl TaskControlBlock {
                 children: Vec::new(),
                 exit_code: 0,
                 fd_table: vec![
-                        // 0 -> stdin
-                        Some(Arc::new(Stdin)),
-                        // 1 -> stdout
-                        Some(Arc::new(Stdout)),
-                        // 2 -> stderr
-                        Some(Arc::new(Stdout)),
-                    ],
+                    // 0 -> stdin
+                    Some(Arc::new(Stdin)),
+                    // 1 -> stdout
+                    Some(Arc::new(Stdout)),
+                    // 2 -> stderr
+                    Some(Arc::new(Stdout)),
+                ],
+                signals: SignalFlags::empty(),
+                signal_mask: SignalFlags::empty(),
+                handling_sig: -1,
+                signal_actions: SignalActions::default(),
+                killed: false,
+                frozen: false,
+                trap_ctx_backup: None,
             })},
         };
         // prepare TrapContext in user space
@@ -165,6 +185,13 @@ impl TaskControlBlock {
                 children: Vec::new(),
                 exit_code: 0,
                 fd_table: new_fd_table,
+                signals: SignalFlags::empty(),
+                signal_mask: parent_inner.signal_mask,
+                handling_sig: -1,
+                signal_actions: parent_inner.signal_actions.clone(),
+                killed: false,
+                frozen: false,
+                trap_ctx_backup: None,
             }) },
         });
         // add child
@@ -176,14 +203,47 @@ impl TaskControlBlock {
         // return
         task_control_block
     }
-    pub fn exec(&self, elf_data: &[u8]) {
+    pub fn exec(&self, elf_data: &[u8], args: Vec<String>) {
         // memory_set with elf program headers/trampoline/trap context/user stack
-        let (memory_set, user_sp, entry_point) = MemorySet::from_elf(elf_data);
+        let (memory_set, mut user_sp, entry_point) = MemorySet::from_elf(elf_data);
         let trap_cx_ppn = memory_set
             .translate(VirtAddr::from(TRAP_CONTEXT).into())
             .unwrap()
             .ppn();
-
+        // push arguments on user stack
+        user_sp -= (args.len() + 1) * core::mem::size_of::<usize>();
+        let argv_base = user_sp;  // user space argv base
+        let mut argv: Vec<_> = (0..=args.len())
+            .map(|arg_id| {
+                translated_refmut(
+                    memory_set.token(),
+                    (argv_base + arg_id * core::mem::size_of::<usize>()) as *mut usize  
+                )
+            })
+            .collect();
+        //  -----------------------    USER STACK (KERNEL SPACE token)
+        //   (8byte)   [argv[len]]     value: 0x0000_0000
+        //   (8byte)   [argv[len - 1]] value: virtual addr of real str: args[len - 1]   
+        //   (8byte)   [argv[...]]     value: virtual addr of real str: args[...]   
+        //   (8byte)   [argv[1]]       value: virtual addr of real str: args[1] 
+        //   (8byte)   [argv[0]]       value: virtual addr of real str: args[0]   
+        //  -----------------------    ARGV BASE
+        //   (xbyte)   [args[len - 1]] value: str args[len - 1]: bytes = x
+        //   ...
+        //   (xbyte)   [args[0]]       value: str args[0]:       bytes = x
+        *argv[args.len()] = 0;   
+        for i in 0..args.len() {
+            user_sp -= args[i].len() + 1;
+            *argv[i] = user_sp;
+            let mut p = user_sp;
+            for c in args[i].as_bytes() {
+                *translated_refmut(memory_set.token(), p as *mut u8) = *c;
+                p += 1;
+            }
+            *translated_refmut(memory_set.token(), p as *mut u8) = 0;
+        }
+        // make the user_sp aligned to 8B for k210 platform
+        user_sp -= user_sp % (core::mem::size_of::<usize>());
         // **** access inner exclusively
         let mut inner = self.inner_exclusive_access();
         // substitute memory_set
@@ -199,6 +259,8 @@ impl TaskControlBlock {
             self.kernel_stack.get_top(),
             trap_handler as usize,
         );
+        trap_cx.x[10] = args.len();
+        trap_cx.x[11] = argv_base;
         // **** stop exclusively accessing inner automatically
     }
 }

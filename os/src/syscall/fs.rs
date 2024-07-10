@@ -1,7 +1,12 @@
 //! File and filesystem-related syscalls
 
-use crate::fs::{open_file, OpenFlags};
-use crate::mm::{translated_str, UserBuffer};
+use core::arch;
+
+use log::debug;
+
+use crate::fs::{make_pipe, open_file, OpenFlags};
+use crate::mm::{translated_refmut, translated_str, UserBuffer};
+use crate::task::signals::SignalFlags;
 use crate::task::{current_task, suspend_current_and_run_next};
 use crate::{mm::translated_byte_buffer, task::current_user_token};
 use crate::sbi::console_getchar;
@@ -77,4 +82,33 @@ pub fn sys_close(fd: usize) -> isize {
     inner.fd_table[fd].take();
     0
 }
+
+pub fn sys_pipe(pipe: *mut usize) -> isize {
+    let task = current_task().unwrap();
+    let token = current_user_token();
+    let mut inner = task.inner_exclusive_access();
+    let (pipe_read, pipe_write) = make_pipe();
+    let read_fd = inner.alloc_fd();
+    inner.fd_table[read_fd] = Some(pipe_read);
+    let write_fd = inner.alloc_fd();
+    inner.fd_table[write_fd] = Some(pipe_write);
+    *translated_refmut(token, pipe) = read_fd;
+    *translated_refmut(token, unsafe { pipe.add(1) }) = write_fd;
+    0
+}
+
+pub fn sys_dup(fd: usize) -> isize {
+    let task = current_task().unwrap();
+    let mut inner = task.inner_exclusive_access();
+    if inner.fd_table[fd].is_none() {
+        return -1;
+    }    
+    let new_fd = inner.alloc_fd();
+    inner.fd_table[new_fd] = {
+        let arc = inner.fd_table[fd].as_ref().unwrap().clone();
+        Some(arc)
+    };
+    new_fd as isize
+}
+
 
