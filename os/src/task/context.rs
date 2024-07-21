@@ -2,7 +2,7 @@
 
 use crate::trap::trap_return;
 
-/// Task Context
+/// Task Context of Kernel Stack function (used in __switch())
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct TaskContext {

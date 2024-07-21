@@ -7,7 +7,7 @@ use log::debug;
 use riscv::register::satp;
 
 use crate::config::MMIO;
-use crate::{config::{MEMORY_END, PAGE_SIZE, TRAMPOLINE, TRAP_CONTEXT, USER_STACK_SIZE}, mm::address::StepByOne, sync::UPSafeCell};
+use crate::{config::{MEMORY_END, PAGE_SIZE, TRAMPOLINE,  USER_STACK_SIZE}, mm::address::StepByOne, sync::UPSafeCell};
 
 use super::page_table::PageTableEntry;
 use super::{address::{PhysAddr, PhysPageNum, VPNRange, VirtAddr, VirtPageNum}, frame_allocator::{frame_alloc, FrameTracker}, page_table::{PTEFlags, PageTable}};
@@ -294,31 +294,30 @@ impl MemorySet {
                 max_end_vpn = map_area.vpn_range.get_end();
                 memory_set.push(
                     map_area,
-                    Some(&elf.input[ph.offset() as usize..(ph.offset() + ph.file_size()) as usize])
+                    Some(&elf.input[ph.offset() as usize..(ph.offset() + ph.file_size()) as usize]),
                 );
             }
         }
-        // map user stack with U flags
         let max_end_va: VirtAddr = max_end_vpn.into();
-        let mut user_stack_bottom: usize = max_end_va.into();
+        let mut user_stack_base: usize = max_end_va.into();
         // guard page
-        user_stack_bottom += PAGE_SIZE;
-        let user_stack_top = user_stack_bottom + USER_STACK_SIZE;
-        memory_set.push(MapArea::new(
-            user_stack_bottom.into(),
-            user_stack_top.into(),
-            MapType::Framed,
-            MapPermission::R | MapPermission::W | MapPermission::U,
-        ), None);
-        // map TrapContext
-        memory_set.push(MapArea::new(
-            TRAP_CONTEXT.into(),
-            TRAMPOLINE.into(),
-            MapType::Framed,
-            MapPermission::R | MapPermission::W,
-        ), None);
-
-        (memory_set, user_stack_top, elf.header.pt2.entry_point() as usize)
+        user_stack_base += PAGE_SIZE;
+        // // map user stack
+        // let user_stack_top = user_stack_bottom + USER_STACK_SIZE;
+        // memory_set.push(MapArea::new(
+        //     user_stack_bottom.into(),
+        //     user_stack_top.into(),
+        //     MapType::Framed,
+        //     MapPermission::R | MapPermission::W | MapPermission::U,
+        // ), None);
+        // // map TrapContext
+        // memory_set.push(MapArea::new(
+        //     TRAP_CONTEXT.into(),
+        //     TRAMPOLINE.into(),
+        //     MapType::Framed,
+        //     MapPermission::R | MapPermission::W,
+        // ), None);
+        (memory_set, user_stack_base, elf.header.pt2.entry_point() as usize)
     }
     pub fn activate(&self) {
         let satp = self.page_table.token();

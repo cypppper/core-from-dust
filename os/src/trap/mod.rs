@@ -14,7 +14,7 @@
 
 mod context;
 
-use crate::{syscall::syscall, task::{check_signals_error_of_current, current_add_signal, current_user_token, exit_current_and_run_next, handle_signals, signals::SignalFlags, suspend_current_and_run_next}, timer::set_next_trigger};
+use crate::{syscall::syscall, task::{check_signals_of_current, current_add_signal, current_trap_cx_user_va, current_user_token, exit_current_and_run_next, signals::SignalFlags, suspend_current_and_run_next}, timer::{check_timer, set_next_trigger}};
 use core::arch::{asm, global_asm};
 use riscv::register::{
     sie, mtvec::TrapMode, scause::{self, Exception, Trap, Interrupt}, sepc, stval, stvec
@@ -32,7 +32,9 @@ pub fn enable_timer_interrupt() {
 /// Unimplement: traps/interrupts/exceptions from kernel mode
 /// Todo: Chapter 9: I/O device
 pub fn trap_from_kernel() -> ! {
-    panic!("a trap from kernel!");
+    use riscv::register::sepc;
+    println!("stval = {:#x}, sepc = {:#x}", stval::read(), sepc::read());
+    panic!("a trap {:?} from kernel!", scause::read().cause());
 }
 
 pub fn init() {
@@ -59,19 +61,25 @@ pub fn trap_handler() -> ! {
 
     let scause = scause::read();
     let stval = stval::read();
+    println!(
+        "trap {:?}, stval = {:#x}!",
+        scause.cause(),
+        stval
+    );
     match scause.cause() {
         Trap::Exception(Exception::UserEnvCall) => {
             // jump to next instruction anyway
             let mut cx: &mut TrapContext = current_trap_cx();
             cx.sepc += 4;
             // get system call return value
-            let result = syscall(cx.x[17], [cx.x[10], cx.x[11], cx.x[12]]) as usize;
+            let result = syscall(cx.x[17], [cx.x[10], cx.x[11], cx.x[12]]);
             // cx is changed during sys_exec, so we call it again
             cx = current_trap_cx();
             cx.x[10] = result as usize; 
         }
         Trap::Interrupt(Interrupt::SupervisorTimer) => {
             set_next_trigger();
+            check_timer();
             suspend_current_and_run_next();
         }
         Trap::Exception(Exception::StoreFault) |
@@ -102,10 +110,9 @@ pub fn trap_handler() -> ! {
             );
         }
     }
-    handle_signals();
 
     // check error signals (if error then exit)
-    if let Some((errno, msg)) = check_signals_error_of_current() {
+    if let Some((errno, msg)) = check_signals_of_current() {
         println!("[kernel] {}", msg);
         exit_current_and_run_next(errno);
     }
@@ -121,7 +128,7 @@ pub fn trap_handler() -> ! {
 ///     2 => fork & app_init, after schedule()
 pub fn trap_return() -> ! {
     set_user_trap_entry();
-    let trap_cx_ptr = TRAP_CONTEXT;
+    let trap_cx_user_va = current_trap_cx_user_va();
     let user_satp = current_user_token();
     extern "C" {
         fn __alltraps();
@@ -133,7 +140,7 @@ pub fn trap_return() -> ! {
             "fence.i",
             "jr {restore_va}",
             restore_va = in(reg) restore_va,
-            in("a0") trap_cx_ptr,
+            in("a0") trap_cx_user_va,
             in("a1") user_satp,
             options(noreturn)
         );
@@ -144,4 +151,4 @@ pub fn trap_return() -> ! {
 
 pub use context::TrapContext;
 
-use crate::{config::{TRAMPOLINE, TRAP_CONTEXT}, task::current_trap_cx};
+use crate::{config::TRAMPOLINE, task::current_trap_cx};

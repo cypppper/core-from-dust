@@ -32,11 +32,13 @@ global_asm!(include_str!("link_app.S"));
 pub fn rust_main() -> ! {
     // run with sp pointing at boot stack
     clear_bss();
-    logging::init();
+    println!("[kernel] Hello, world!");
     mm::init();
+    mm::remap_test();
     trap::init();
     trap::enable_timer_interrupt();
     timer::set_next_trigger();
+    fs::list_apps();
     task::add_initproc();
     task::run_tasks();
     panic!("Unreachable in rust_main!");
