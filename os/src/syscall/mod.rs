@@ -56,6 +56,7 @@ use crate::task::action::SignalAction;
 
 /// handle syscall exception with `syscall_id` and other arguments
 pub fn syscall(syscall_id: usize, args: [usize; 3]) -> isize {
+    // println!("syscall: {:?}", syscall_id);
     match syscall_id {
         SYSCALL_DUP => sys_dup(args[0]),
         SYSCALL_OPEN => sys_open(args[0] as *const u8, args[1] as u32),
@@ -65,7 +66,7 @@ pub fn syscall(syscall_id: usize, args: [usize; 3]) -> isize {
         SYSCALL_WRITE => sys_write(args[0], args[1] as *const u8, args[2]),
         SYSCALL_EXIT => sys_exit(args[0] as i32),
         SYSCALL_YIELD => sys_yield(),
-        SYSCALL_KILL => sys_kill(args[0], args[1] as i32),
+        SYSCALL_KILL => sys_kill(args[0], args[1] as u32),
         SYSCALL_GET_TIME => sys_get_time(),
         SYSCALL_GETPID => sys_getpid(),
         SYSCALL_FORK => sys_fork(),

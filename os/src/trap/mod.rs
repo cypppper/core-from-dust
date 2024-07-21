@@ -61,11 +61,11 @@ pub fn trap_handler() -> ! {
 
     let scause = scause::read();
     let stval = stval::read();
-    println!(
-        "trap {:?}, stval = {:#x}!",
-        scause.cause(),
-        stval
-    );
+    // println!(
+    //     "trap {:?}, stval = {:#x}!",
+    //     scause.cause(),
+    //     stval
+    // );
     match scause.cause() {
         Trap::Exception(Exception::UserEnvCall) => {
             // jump to next instruction anyway

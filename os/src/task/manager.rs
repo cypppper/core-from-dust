@@ -1,11 +1,8 @@
-use alloc::sync::Arc;
-use alloc::collections::{BTreeMap, VecDeque};
-use lazy_static::lazy_static;
-
+use super::{ProcessControlBlock, TaskControlBlock, TaskStatus};
 use crate::sync::UPSafeCell;
-
-use super::process::ProcessControlBlock;
-use super::task::TaskControlBlock;
+use alloc::collections::{BTreeMap, VecDeque};
+use alloc::sync::Arc;
+use lazy_static::*;
 
 pub struct TaskManager {
     ready_queue: VecDeque<Arc<TaskControlBlock>>,
@@ -14,7 +11,9 @@ pub struct TaskManager {
 /// A simple FIFO scheduler.
 impl TaskManager {
     pub fn new() -> Self {
-        Self { ready_queue: VecDeque::new(), } 
+        Self {
+            ready_queue: VecDeque::new(),
+        }
     }
     pub fn add(&mut self, task: Arc<TaskControlBlock>) {
         self.ready_queue.push_back(task);
@@ -23,11 +22,11 @@ impl TaskManager {
         self.ready_queue.pop_front()
     }
     pub fn remove(&mut self, task: Arc<TaskControlBlock>) {
-        if let Some((id, _)) = self.ready_queue.iter()
+        if let Some((id, _)) = self
+            .ready_queue
+            .iter()
             .enumerate()
-            .find(|(_, iter_task)| {
-                Arc::as_ptr(iter_task) == Arc::as_ptr(&task)
-            }) 
+            .find(|(_, t)| Arc::as_ptr(t) == Arc::as_ptr(&task))
         {
             self.ready_queue.remove(id);
         }
@@ -35,15 +34,21 @@ impl TaskManager {
 }
 
 lazy_static! {
-    pub static ref TASK_MANAGER: UPSafeCell<TaskManager> = unsafe {
-        UPSafeCell::new(TaskManager::new())
-    };
-    pub static ref PID2TCB: UPSafeCell<BTreeMap<usize, Arc<ProcessControlBlock>>> =
+    pub static ref TASK_MANAGER: UPSafeCell<TaskManager> =
+        unsafe { UPSafeCell::new(TaskManager::new()) };
+    pub static ref PID2PCB: UPSafeCell<BTreeMap<usize, Arc<ProcessControlBlock>>> =
         unsafe { UPSafeCell::new(BTreeMap::new()) };
 }
 
 pub fn add_task(task: Arc<TaskControlBlock>) {
     TASK_MANAGER.exclusive_access().add(task);
+}
+
+pub fn wakeup_task(task: Arc<TaskControlBlock>) {
+    let mut task_inner = task.inner_exclusive_access();
+    task_inner.task_status = TaskStatus::Ready;
+    drop(task_inner);
+    add_task(task);
 }
 
 pub fn remove_task(task: Arc<TaskControlBlock>) {
@@ -55,20 +60,17 @@ pub fn fetch_task() -> Option<Arc<TaskControlBlock>> {
 }
 
 pub fn pid2process(pid: usize) -> Option<Arc<ProcessControlBlock>> {
-    let map = PID2TCB.exclusive_access();
+    let map = PID2PCB.exclusive_access();
     map.get(&pid).map(Arc::clone)
 }
 
-pub fn remove_from_pid2task(pid: usize) {
-    let mut map = PID2TCB.exclusive_access();
+pub fn insert_into_pid2process(pid: usize, process: Arc<ProcessControlBlock>) {
+    PID2PCB.exclusive_access().insert(pid, process);
+}
+
+pub fn remove_from_pid2process(pid: usize) {
+    let mut map = PID2PCB.exclusive_access();
     if map.remove(&pid).is_none() {
         panic!("cannot find pid {} in pid2task!", pid);
     }
 }
-
-pub fn insert_into_pid2process(pid: usize, process: Arc<ProcessControlBlock>) {
-    PID2TCB
-        .exclusive_access()
-        .insert(pid, process);
-}
-

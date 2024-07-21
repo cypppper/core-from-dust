@@ -39,7 +39,7 @@ pub fn sys_mutex_lock(mutex_id: usize) -> isize {
     let mutex = process_inner.mutex_list[mutex_id].as_ref().unwrap().clone();
     drop(process_inner);
     drop(process);
-    mutex.unlock();
+    mutex.lock();
     0
 }
 

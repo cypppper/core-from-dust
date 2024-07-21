@@ -13,7 +13,7 @@ use alloc::sync::Arc;
 use alloc::vec::Vec;
 use id::TaskUserRes;
 use manager::remove_task;
-pub use manager::{add_task, pid2process, remove_from_pid2task};
+pub use manager::{add_task, pid2process, remove_from_pid2process, wakeup_task};
 use process::ProcessControlBlock;
 use processor::PROCESSOR;
 pub use processor::{current_task, schedule, take_current_task, current_user_token, current_kstack_top, current_trap_cx_user_va, current_trap_cx, current_process};
@@ -26,10 +26,7 @@ use crate::sbi::shutdown;
 use crate::timer::remove_timer;
 use crate::trap::TrapContext;
 pub use processor::run_tasks;
-
-/// pid of usertests app in make run TEST=1
-pub const IDLE_PID: usize = 0;
-
+pub use id::IDLE_PID;
 
 pub fn suspend_current_and_run_next() {
     // There must be an application running.
@@ -77,7 +74,7 @@ pub fn exit_current_and_run_next(exit_code: i32) {
                 shutdown(false);
             }
         }
-        remove_from_pid2task(pid);
+        remove_from_pid2process(pid);
         let mut process_inner = process.inner_exclusive_access();
         // mark this process as a zombie process
         process_inner.is_zombie = true;
@@ -172,9 +169,4 @@ pub fn block_current_and_run_next() {
     schedule(task_cx_ptr);
 }
 
-pub fn wakeup_task(task: Arc<TaskControlBlock>) {
-    let mut task_inner = task.inner_exclusive_access();
-    task_inner.task_status = TaskStatus::Ready;
-    drop(task_inner);
-    add_task(task);
-}
+

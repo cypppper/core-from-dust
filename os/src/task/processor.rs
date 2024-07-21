@@ -18,15 +18,6 @@ impl Processor {
             idle_task_cx: TaskContext::zero_init(),
         }
     }
-}
-
-lazy_static! {
-    pub static ref PROCESSOR: UPSafeCell<Processor> = unsafe {
-        UPSafeCell::new(Processor::new())
-    };
-}
-
-impl Processor {
     pub fn take_current(&mut self) -> Option<Arc<TaskControlBlock>> {
         self.current.take()
     }
@@ -36,6 +27,12 @@ impl Processor {
     fn get_idle_task_cx_ptr(&mut self) -> *mut TaskContext {
         &mut self.idle_task_cx as *mut _
     }
+}
+
+lazy_static! {
+    pub static ref PROCESSOR: UPSafeCell<Processor> = unsafe {
+        UPSafeCell::new(Processor::new())
+    };
 }
 
 pub fn take_current_task() -> Option<Arc<TaskControlBlock>> {
@@ -91,7 +88,6 @@ pub fn run_tasks() {
             processor.current = Some(task);
             // release processor manually
             drop(processor);
-            println!("start run tasks!");
             unsafe {
                 __switch(idle_task_cx_ptr, next_task_cx_ptr);
             }

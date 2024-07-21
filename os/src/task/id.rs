@@ -4,7 +4,7 @@ use lazy_static::lazy_static;
 use crate::{config::{KERNEL_STACK_SIZE, PAGE_SIZE, TRAMPOLINE, TRAP_CONTEXT_BASE, USER_STACK_SIZE}, mm::{MapPermission, PhysPageNum, VirtAddr, KERNEL_SPACE}, sync::UPSafeCell};
 
 use super::process::{ProcessControlBlock, ProcessControlBlockInner};
-
+pub const IDLE_PID: usize = 0;
 
 pub struct RecycleAllocator {
     current: usize,
@@ -42,7 +42,10 @@ lazy_static! {
     static ref PID_ALLOCATOR: UPSafeCell<RecycleAllocator> = unsafe { UPSafeCell::new(
         RecycleAllocator::new()
     ) };
+    static ref KSTACK_ALLOCATOR: UPSafeCell<RecycleAllocator> =
+        unsafe { UPSafeCell::new(RecycleAllocator::new()) };
 }
+
 
 pub struct PidHandle(pub usize);
 
@@ -53,6 +56,45 @@ pub fn pid_alloc() -> PidHandle {
 impl Drop for PidHandle {
     fn drop(&mut self) {
         PID_ALLOCATOR.exclusive_access().dealloc(self.0);
+    }
+}
+
+/// Reture (bottom, top) of a kernel stack in kernel space.
+pub fn kernel_stack_position(kstack_id: usize) -> (usize, usize) {
+    let top = TRAMPOLINE - kstack_id * (KERNEL_STACK_SIZE + PAGE_SIZE);
+    let bottom = top - KERNEL_STACK_SIZE;
+    (bottom, top)
+}
+
+pub fn kstack_alloc() -> KernelStack {
+    let kstack_id = KSTACK_ALLOCATOR.exclusive_access().alloc();
+    let (kstack_bottom, kstack_top) = kernel_stack_position(kstack_id);
+    KERNEL_SPACE.exclusive_access().insert_framed_area(
+        kstack_bottom.into(), 
+        kstack_top.into(),
+        MapPermission::R | MapPermission::W,
+    );
+    KernelStack(kstack_id)
+}
+
+impl Drop for KernelStack {
+    fn drop(&mut self) {
+        let (kstack_bottom, _) = kernel_stack_position(self.0);
+        let bottom_va: VirtAddr = kstack_bottom.into();
+        KERNEL_SPACE
+            .exclusive_access()
+            .remove_area_with_start_vpn(bottom_va.into());
+        KSTACK_ALLOCATOR.exclusive_access().dealloc(self.0);
+    }
+}
+
+
+pub struct KernelStack(pub usize);
+
+impl KernelStack {
+    pub fn get_top(&self) -> usize {
+        let (_, kernel_stack_top) = kernel_stack_position(self.0);
+        kernel_stack_top
     }
 }
 
@@ -160,45 +202,3 @@ impl Drop for TaskUserRes {
     }
 }
 
-lazy_static! {
-    static ref KSTACK_ALLOCATOR: UPSafeCell<RecycleAllocator> =
-        unsafe { UPSafeCell::new(RecycleAllocator::new()) };
-}
-
-pub struct KernelStack(pub usize);
-
-impl KernelStack {
-    pub fn get_top(&self) -> usize {
-        let (_, kernel_stack_top) = kernel_stack_position(self.0);
-        kernel_stack_top
-    }
-}
-
-/// Reture (bottom, top) of a kernel stack in kernel space.
-pub fn kernel_stack_position(kstack_id: usize) -> (usize, usize) {
-    let top = TRAMPOLINE - kstack_id * (KERNEL_STACK_SIZE + PAGE_SIZE);
-    let bottom = top - KERNEL_STACK_SIZE;
-    (bottom, top)
-}
-
-pub fn kstack_alloc() -> KernelStack {
-    let kstack_id = KSTACK_ALLOCATOR.exclusive_access().alloc();
-    let (kstack_bottom, kstack_top) = kernel_stack_position(kstack_id);
-    KERNEL_SPACE.exclusive_access().insert_framed_area(
-        kstack_bottom.into(), 
-        kstack_top.into(),
-        MapPermission::R | MapPermission::W,
-    );
-    KernelStack(kstack_id)
-}
-
-impl Drop for KernelStack {
-    fn drop(&mut self) {
-        let (kstack_bottom, _) = kernel_stack_position(self.0);
-        let bottom_va: VirtAddr = kstack_bottom.into();
-        KERNEL_SPACE
-            .exclusive_access()
-            .remove_area_with_start_vpn(bottom_va.into());
-        KSTACK_ALLOCATOR.exclusive_access().dealloc(self.0);
-    }
-}

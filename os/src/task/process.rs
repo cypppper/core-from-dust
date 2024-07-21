@@ -60,9 +60,6 @@ impl ProcessControlBlock {
     pub fn inner_exclusive_access(&self) -> RefMut<'_, ProcessControlBlockInner> {
         self.inner.exclusive_access()
     }
-    pub fn getpid(&self) -> usize {
-        self.pid.0
-    }
     pub fn new(elf_data: &[u8]) -> Arc<Self> {
         // memory_set with elf program headers/trampoline/trap context/user stack
         let (memory_set, ustack_base, entry_point) = MemorySet::from_elf(elf_data);
@@ -119,7 +116,58 @@ impl ProcessControlBlock {
         add_task(task);
         process
     }
-
+    /// Only support processes with a single thread
+    pub fn exec(self: &Arc<Self>, elf_data: &[u8], args: Vec<String>) {
+        assert_eq!(self.inner_exclusive_access().thread_count(), 1);
+        // memory_set with elf program headers/trampoline/trap context/user stack
+        let (memory_set, ustack_base, entry_point) = MemorySet::from_elf(elf_data);
+        let new_token = memory_set.token();
+        // substitute memory_set
+        self.inner_exclusive_access().memory_set = memory_set;
+        // then we alloc user resource for main thread again
+        // since memory_set has been changed
+        let task = self.inner_exclusive_access().get_task(0);
+        let mut task_inner = task.inner_exclusive_access();
+        task_inner.res.as_mut().unwrap().ustack_base = ustack_base;
+        task_inner.res.as_mut().unwrap().alloc_user_res();
+        task_inner.trap_cx_ppn = task_inner.res.as_mut().unwrap().trap_cx_ppn();
+        // push arguments on user stack
+        let mut user_sp = task_inner.res.as_mut().unwrap().ustack_top();
+        user_sp -= (args.len() + 1) * core::mem::size_of::<usize>();
+        let argv_base = user_sp;
+        let mut argv: Vec<_> = (0..=args.len())
+            .map(|arg| {
+                translated_refmut(
+                    new_token,
+                    (argv_base + arg * core::mem::size_of::<usize>()) as *mut usize,
+                )
+            })
+            .collect();
+        *argv[args.len()] = 0;
+        for i in 0..args.len() {
+            user_sp -= args[i].len() + 1;
+            *argv[i] = user_sp;
+            let mut p = user_sp;
+            for c in args[i].as_bytes() {
+                *translated_refmut(new_token, p as *mut u8) = *c;
+                p += 1;
+            }
+            *translated_refmut(new_token, p as *mut u8) = 0;
+        }
+        // make the user_sp aligned to 8B for k210 platform
+        user_sp -= user_sp % core::mem::size_of::<usize>();
+        // initialize trap_cx
+        let mut trap_cx = TrapContext::app_init_context(
+            entry_point,
+            user_sp,
+            KERNEL_SPACE.exclusive_access().token(),
+            task.kstack.get_top(),
+            trap_handler as usize,
+        );
+        trap_cx.x[10] = args.len();
+        trap_cx.x[11] = argv_base;
+        *task_inner.get_trap_cx() = trap_cx;
+    }
     /// Only support processes with a single thread
     pub fn fork(self: &Arc<Self>) -> Arc<Self> {
         let mut parent = self.inner_exclusive_access();
@@ -185,56 +233,7 @@ impl ProcessControlBlock {
         add_task(task);
         child
     }
-    /// Only support processes with a single thread
-    pub fn exec(self: &Arc<Self>, elf_data: &[u8], args: Vec<String>) {
-        assert_eq!(self.inner_exclusive_access().thread_count(), 1);
-        // memory_set with elf program headers/trampoline/trap context/user stack
-        let (memory_set, ustack_base, entry_point) = MemorySet::from_elf(elf_data);
-        let new_token = memory_set.token();
-        // substitute memory_set
-        self.inner_exclusive_access().memory_set = memory_set;
-        // then we alloc user resource for main thread again
-        // since memory_set has been changed
-        let task = self.inner_exclusive_access().get_task(0);
-        let mut task_inner = task.inner_exclusive_access();
-        task_inner.res.as_mut().unwrap().ustack_base = ustack_base;
-        task_inner.res.as_mut().unwrap().alloc_user_res();
-        task_inner.trap_cx_ppn = task_inner.res.as_mut().unwrap().trap_cx_ppn();
-        // push arguments on user stack
-        let mut user_sp = task_inner.res.as_mut().unwrap().ustack_top();
-        user_sp -= (args.len() + 1) * core::mem::size_of::<usize>();
-        let argv_base = user_sp;
-        let mut argv: Vec<_> = (0..=args.len())
-            .map(|arg| {
-                translated_refmut(
-                    new_token,
-                    (argv_base + arg * core::mem::size_of::<usize>()) as *mut usize,
-                )
-            })
-            .collect();
-        *argv[args.len()] = 0;
-        for i in 0..args.len() {
-            user_sp -= args[i].len() + 1;
-            *argv[i] = user_sp;
-            let mut p = user_sp;
-            for c in args[i].as_bytes() {
-                *translated_refmut(new_token, p as *mut u8) = *c;
-                p += 1;
-            }
-            *translated_refmut(new_token, p as *mut u8) = 0;
-        }
-        // make the user_sp aligned to 8B for k210 platform
-        user_sp -= user_sp % core::mem::size_of::<usize>();
-        // initialize trap_cx
-        let mut trap_cx = TrapContext::app_init_context(
-            entry_point,
-            user_sp,
-            KERNEL_SPACE.exclusive_access().token(),
-            task.kstack.get_top(),
-            trap_handler as usize,
-        );
-        trap_cx.x[10] = args.len();
-        trap_cx.x[11] = argv_base;
-        *task_inner.get_trap_cx() = trap_cx;
+    pub fn getpid(&self) -> usize {
+        self.pid.0
     }
 }

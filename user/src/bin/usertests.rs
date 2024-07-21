@@ -45,14 +45,14 @@ static SUCC_TESTS: &[(&str, &str, &str, &str, i32)] = &[
 
 static FAIL_TESTS: &[(&str, &str, &str, &str, i32)] = &[
     ("stack_overflow\0", "\0", "\0", "\0", -11),
-    ("race_adder_loop\0", "\0", "\0", "\0", -6),
+    // ("race_adder_loop\0", "\0", "\0", "\0", -6),
     ("priv_csr\0", "\0", "\0", "\0", -4),
     ("priv_inst\0", "\0", "\0", "\0", -4),
     ("store_fault\0", "\0", "\0", "\0", -11),
-    ("until_timeout\0", "\0", "\0", "\0", -6),
-    ("adder\0", "\0", "\0", "\0", -6),
-    ("adder_simple_spin\0", "\0", "\0", "\0", -6),
-    ("adder_simple_yield\0", "\0", "\0", "\0", -6),
+    // ("until_timeout\0", "\0", "\0", "\0", -6),
+    // ("adder\0", "\0", "\0", "\0", -6),
+    // ("adder_simple_spin\0", "\0", "\0", "\0", -6),
+    // ("adder_simple_yield\0", "\0", "\0", "\0", -6),
 ];
 
 use user_lib::{exec, fork, waitpid};

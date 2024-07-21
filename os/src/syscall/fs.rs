@@ -17,9 +17,9 @@ const FD_STDIN: usize = 0;
 
 /// write buf of length `len` to a file with `fd`
 pub fn sys_write(fd: usize, buf: *const u8, len: usize) -> isize {
+    let token = current_user_token();
     let process = current_process();
     let inner = process.inner_exclusive_access();
-    let token = current_user_token();
     if fd >= inner.fd_table.len() {
         return -1;
     }
@@ -28,7 +28,7 @@ pub fn sys_write(fd: usize, buf: *const u8, len: usize) -> isize {
             return -1;
         }
         let file = file.clone();
-        // release current task PCB manually to avoid multi-borrow
+        // release current task TCB manually to avoid multi-borrow
         drop(inner);
         file.write(UserBuffer::new(translated_byte_buffer(token, buf, len))) as isize
     } else {
@@ -37,9 +37,9 @@ pub fn sys_write(fd: usize, buf: *const u8, len: usize) -> isize {
 }
 
 pub fn sys_read(fd: usize, buf: *const u8, len: usize) -> isize {
+    let token = current_user_token();
     let process = current_process();
     let inner = process.inner_exclusive_access();
-    let token = current_user_token();
     if fd >= inner.fd_table.len() {
         return -1;
     }
@@ -56,12 +56,11 @@ pub fn sys_read(fd: usize, buf: *const u8, len: usize) -> isize {
     }
 }
 
-
 pub fn sys_open(path: *const u8, flags: u32) -> isize {
     let process = current_process();
     let token = current_user_token();
     let path = translated_str(token, path);
-    if let Some(inode) = open_file(&path, OpenFlags::from_bits(flags).unwrap()) {
+    if let Some(inode) = open_file(path.as_str(), OpenFlags::from_bits(flags).unwrap()) {
         let mut inner = process.inner_exclusive_access();
         let fd = inner.alloc_fd();
         inner.fd_table[fd] = Some(inode);
@@ -86,8 +85,8 @@ pub fn sys_close(fd: usize) -> isize {
 
 pub fn sys_pipe(pipe: *mut usize) -> isize {
     let process = current_process();
-    let mut inner = process.inner_exclusive_access();
     let token = current_user_token();
+    let mut inner = process.inner_exclusive_access();
     let (pipe_read, pipe_write) = make_pipe();
     let read_fd = inner.alloc_fd();
     inner.fd_table[read_fd] = Some(pipe_read);
@@ -111,5 +110,3 @@ pub fn sys_dup(fd: usize) -> isize {
     inner.fd_table[new_fd] = Some(Arc::clone(inner.fd_table[fd].as_ref().unwrap()));
     new_fd as isize
 }
-
-

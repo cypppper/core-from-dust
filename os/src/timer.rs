@@ -6,7 +6,7 @@ use crate::sbi::set_timer;
 use crate::sync::UPSafeCell;
 use alloc::collections::BinaryHeap;
 use crate::config::CLOCK_FREQ;
-use crate::task::{wakeup_task, TaskControlBlock};
+use crate::task::{ wakeup_task, TaskControlBlock};
 
 const MICRO_PER_SEC: usize = 1_000_000;
 const MSEC_PER_SEC: usize = 1000;
@@ -29,7 +29,15 @@ pub fn get_time_ms() -> usize {
 }
 
 pub fn remove_timer(task: Arc<TaskControlBlock>) {
-    todo!()
+    let mut timers = TIMERS.exclusive_access();
+    let mut temp = BinaryHeap::<TimerCondVar>::new();
+    for condvar in timers.drain() {
+        if Arc::as_ptr(&task) != Arc::as_ptr(&condvar.task) {
+            temp.push(condvar);
+        }
+    }
+    timers.clear();
+    timers.append(&mut temp);
 }
 
 pub struct TimerCondVar {
